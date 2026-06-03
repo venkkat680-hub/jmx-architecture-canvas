@@ -1,0 +1,1214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>JMX Architecture — Interactive Canvas</title>
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --surface: rgba(255,255,255,0.04);
+    --surface-hover: rgba(255,255,255,0.08);
+    --border: rgba(255,255,255,0.10);
+    --border-active: rgba(99,179,237,0.6);
+    --accent: #63b3ed;
+    --accent2: #68d391;
+    --accent3: #f6ad55;
+    --accent4: #fc8181;
+    --accent5: #b794f4;
+    --text: #e2e8f0;
+    --text-dim: #718096;
+    --text-mono: #a0aec0;
+    --panel-w: 380px;
+    --glow-blue: 0 0 20px rgba(99,179,237,0.3);
+    --glow-green: 0 0 20px rgba(104,211,145,0.3);
+    --glow-orange: 0 0 20px rgba(246,173,85,0.3);
+    --glow-purple: 0 0 20px rgba(183,148,244,0.3);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 40px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,14,26,0.9);
+    backdrop-filter: blur(10px);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-title { font-size: 15px; font-weight: 600; letter-spacing: .5px; }
+  .header-title span { color: var(--accent); }
+  .header-sub { font-size: 11px; color: var(--text-dim); font-family: 'Courier New', monospace; margin-top: 2px; }
+  .header-pills { display: flex; gap: 8px; }
+  .pill {
+    padding: 5px 14px; border-radius: 20px; font-size: 11px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--border); background: var(--surface);
+    transition: all .2s; letter-spacing: .3px; color: var(--text-dim);
+  }
+  .pill.active { border-color: var(--accent); color: var(--accent); background: rgba(99,179,237,0.1); }
+  .pill:hover:not(.active) { border-color: var(--border-active); color: var(--text); }
+
+  /* ── CANVAS AREA ── */
+  .canvas-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+    position: relative;
+  }
+
+  /* ── LEGEND ── */
+  .legend {
+    display: flex; gap: 24px; align-items: center;
+    padding: 14px 40px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,14,26,0.7);
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-dim); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .legend-line { width: 24px; height: 2px; border-radius: 2px; }
+
+  /* ── THREE-PANEL LAYOUT ── */
+  .panels {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    min-height: calc(100vh - 130px);
+    position: relative;
+  }
+
+  /* Dividers */
+  .panels::before, .panels::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; width: 1px;
+    background: linear-gradient(to bottom, transparent, var(--border) 15%, var(--border) 85%, transparent);
+  }
+  .panels::before { left: 33.33%; }
+  .panels::after  { left: 66.66%; }
+
+  .panel {
+    padding: 32px 28px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .panel-header {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+  .panel-num { font-size: 10px; color: var(--text-dim); font-family: monospace; letter-spacing: 1px; }
+  .panel-title { font-size: 15px; font-weight: 700; margin-top: 2px; }
+  .panel-desc { font-size: 11px; color: var(--text-dim); margin-top: 4px; line-height: 1.5; }
+
+  /* ── GLASS CARD ── */
+  .glass-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    position: relative;
+    transition: border-color .2s, box-shadow .2s, background .2s;
+  }
+  .glass-card:hover { background: var(--surface-hover); }
+
+  .card-label {
+    font-size: 9px; font-weight: 700; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--text-dim);
+    margin-bottom: 10px;
+    font-family: 'Courier New', monospace;
+  }
+  .card-title {
+    font-size: 13px; font-weight: 600; margin-bottom: 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-mono {
+    font-family: 'Courier New', monospace;
+    font-size: 10px; color: var(--text-mono);
+    margin-bottom: 8px;
+    line-height: 1.4;
+  }
+  .card-desc { font-size: 11px; color: var(--text-dim); line-height: 1.5; }
+
+  /* Tooltip on hover */
+  .has-tooltip { cursor: help; position: relative; }
+  .has-tooltip .tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%; transform: translateX(-50%);
+    background: #1a2236;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    white-space: nowrap;
+    z-index: 200;
+    pointer-events: none;
+    box-shadow: var(--glow-blue);
+  }
+  .has-tooltip:hover .tooltip { display: block; }
+  .has-tooltip .tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%; left: 50%; transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: var(--accent);
+  }
+
+  /* ── BADGES ── */
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 4px;
+    font-size: 9px; font-weight: 700; letter-spacing: .5px;
+    font-family: 'Courier New', monospace;
+  }
+  .badge-blue   { background: rgba(99,179,237,0.15); color: var(--accent);  border: 1px solid rgba(99,179,237,0.3); }
+  .badge-green  { background: rgba(104,211,145,0.15);color: var(--accent2); border: 1px solid rgba(104,211,145,0.3); }
+  .badge-orange { background: rgba(246,173,85,0.15); color: var(--accent3); border: 1px solid rgba(246,173,85,0.3); }
+  .badge-purple { background: rgba(183,148,244,0.15);color: var(--accent5); border: 1px solid rgba(183,148,244,0.3); }
+  .badge-red    { background: rgba(252,129,129,0.15);color: var(--accent4); border: 1px solid rgba(252,129,129,0.3); }
+
+  /* ── PANEL 1: MBEANS ── */
+  .p1-icon { background: rgba(99,179,237,0.15); color: var(--accent); }
+
+  .mbean-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .mbean-card {
+    border-radius: 10px; padding: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    transition: all .25s; cursor: pointer;
+    position: relative;
+  }
+  .mbean-card:hover { transform: translateY(-2px); }
+  .mbean-card.selected { border-width: 1.5px; }
+  .mbean-card.sel-standard { border-color: var(--accent);  box-shadow: var(--glow-blue); }
+  .mbean-card.sel-dynamic  { border-color: var(--accent2); box-shadow: var(--glow-green); }
+  .mbean-card.sel-open     { border-color: var(--accent3); box-shadow: var(--glow-orange); }
+  .mbean-card.sel-model    { border-color: var(--accent5); box-shadow: var(--glow-purple); }
+
+  .mbean-icon { font-size: 20px; margin-bottom: 6px; }
+  .mbean-name { font-size: 12px; font-weight: 700; }
+  .mbean-iface { font-family: 'Courier New', monospace; font-size: 9px; color: var(--text-dim); margin-top: 2px; }
+  .mbean-desc { font-size: 10px; color: var(--text-dim); margin-top: 6px; line-height: 1.4; }
+
+  /* Attribute / Operation toggle */
+  .toggle-bar {
+    display: flex; gap: 0;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden;
+  }
+  .toggle-btn {
+    flex: 1; padding: 8px 0;
+    font-size: 11px; font-weight: 600; cursor: pointer;
+    background: none; border: none; color: var(--text-dim);
+    transition: all .2s; font-family: inherit;
+  }
+  .toggle-btn.active {
+    background: rgba(99,179,237,0.15);
+    color: var(--accent);
+  }
+
+  .attr-op-display {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    line-height: 1.7;
+  }
+  .code-keyword { color: #fc8181; }
+  .code-type    { color: #63b3ed; }
+  .code-method  { color: #68d391; }
+  .code-annot   { color: #b794f4; }
+  .code-string  { color: #f6ad55; }
+  .code-comment { color: #4a5568; }
+
+  /* ── PANEL 2: AGENT LEVEL ── */
+  .p2-icon { background: rgba(104,211,145,0.15); color: var(--accent2); }
+
+  .mbs-core {
+    background: rgba(104,211,145,0.05);
+    border: 1.5px solid rgba(104,211,145,0.3);
+    border-radius: 14px;
+    padding: 18px;
+    position: relative;
+    box-shadow: var(--glow-green);
+  }
+  .mbs-title {
+    font-size: 14px; font-weight: 800;
+    color: var(--accent2);
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 12px;
+  }
+  .mbs-registry {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    line-height: 1.6;
+    margin-bottom: 10px;
+  }
+  .registry-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    cursor: pointer; transition: background .2s;
+    border-radius: 4px;
+    padding: 4px 6px;
+  }
+  .registry-row:last-child { border-bottom: none; }
+  .registry-row:hover { background: rgba(104,211,145,0.08); }
+  .registry-row.active { background: rgba(104,211,145,0.12); }
+  .reg-key { color: var(--accent2); font-size: 10px; }
+  .reg-arrow { color: var(--text-dim); }
+  .reg-val { color: var(--accent3); font-size: 10px; }
+
+  /* Notification bus */
+  .notif-bus {
+    background: rgba(183,148,244,0.05);
+    border: 1px solid rgba(183,148,244,0.25);
+    border-radius: 10px;
+    padding: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .bus-title {
+    font-size: 11px; font-weight: 700;
+    color: var(--accent5);
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 10px;
+    font-family: 'Courier New', monospace;
+  }
+  .bus-track {
+    height: 28px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(183,148,244,0.2);
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 6px;
+  }
+  .bus-packet {
+    position: absolute;
+    height: 20px;
+    top: 4px;
+    left: -120px;
+    border-radius: 4px;
+    display: flex; align-items: center;
+    padding: 0 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 9px; font-weight: 700;
+    white-space: nowrap;
+    transition: none;
+  }
+  .bus-packet.animating {
+    animation: bus-slide 2.5s ease-in-out forwards;
+  }
+  @keyframes bus-slide {
+    0%   { left: -120px; opacity: 1; }
+    70%  { left: calc(100% - 10px); opacity: 1; }
+    85%  { left: calc(100% - 10px); opacity: 0; }
+    100% { left: -120px; opacity: 0; }
+  }
+  .bus-label { font-size: 9px; color: var(--text-dim); font-family: monospace; }
+
+  .p2-flow-btn {
+    padding: 8px 16px; border-radius: 8px;
+    font-size: 11px; font-weight: 700;
+    cursor: pointer; border: 1px solid rgba(104,211,145,0.4);
+    background: rgba(104,211,145,0.1); color: var(--accent2);
+    transition: all .2s; font-family: inherit;
+    width: 100%;
+  }
+  .p2-flow-btn:hover { background: rgba(104,211,145,0.2); box-shadow: var(--glow-green); }
+
+  /* ── PANEL 3: REMOTE LEVEL ── */
+  .p3-icon { background: rgba(246,173,85,0.15); color: var(--accent3); }
+
+  .remote-tool {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all .25s;
+    position: relative;
+  }
+  .remote-tool:hover { border-color: var(--accent3); background: rgba(246,173,85,0.05); }
+  .remote-tool.firing { border-color: var(--accent3); box-shadow: 0 0 16px rgba(246,173,85,0.4); }
+  .rt-icon { font-size: 22px; flex-shrink: 0; }
+  .rt-name { font-size: 12px; font-weight: 700; }
+  .rt-class { font-family: 'Courier New', monospace; font-size: 9px; color: var(--text-dim); margin-top: 1px; }
+  .rt-badge { margin-left: auto; }
+
+  .connector-card {
+    border-radius: 10px; padding: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    transition: all .2s;
+    position: relative;
+  }
+  .connector-card.active-conn {
+    border-color: var(--accent3);
+    box-shadow: var(--glow-orange);
+    background: rgba(246,173,85,0.05);
+  }
+  .conn-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .conn-icon { font-size: 18px; }
+  .conn-name { font-size: 12px; font-weight: 700; }
+  .conn-class { font-family: 'Courier New', monospace; font-size: 9px; color: var(--text-dim); }
+
+  /* ── FLOW OVERLAY (cross-panel animation) ── */
+  #flow-svg {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    pointer-events: none;
+    z-index: 50;
+    overflow: visible;
+  }
+
+  .flow-path {
+    fill: none;
+    stroke-width: 2;
+    stroke-dasharray: 8 5;
+    opacity: 0;
+  }
+  .flow-dot {
+    r: 5;
+    opacity: 0;
+  }
+
+  /* ── ACTION BUTTONS ── */
+  .action-strip {
+    display: flex; gap: 10px;
+    padding: 16px 40px;
+    border-top: 1px solid var(--border);
+    background: rgba(10,14,26,0.9);
+    backdrop-filter: blur(10px);
+    position: sticky;
+    bottom: 0;
+    z-index: 100;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .action-label { font-size: 11px; color: var(--text-dim); margin-right: 4px; flex-shrink: 0; }
+  .action-btn {
+    padding: 8px 20px; border-radius: 8px;
+    font-size: 11px; font-weight: 700;
+    cursor: pointer; border: 1px solid;
+    transition: all .2s; font-family: inherit;
+    letter-spacing: .3px;
+  }
+  .action-btn-discovery {
+    border-color: rgba(246,173,85,0.5); color: var(--accent3);
+    background: rgba(246,173,85,0.1);
+  }
+  .action-btn-discovery:hover { background: rgba(246,173,85,0.2); box-shadow: var(--glow-orange); }
+  .action-btn-notif {
+    border-color: rgba(183,148,244,0.5); color: var(--accent5);
+    background: rgba(183,148,244,0.1);
+  }
+  .action-btn-notif:hover { background: rgba(183,148,244,0.2); box-shadow: var(--glow-purple); }
+  .action-btn-reset {
+    border-color: var(--border); color: var(--text-dim);
+    background: var(--surface);
+    margin-left: auto;
+  }
+  .action-btn-reset:hover { border-color: var(--border-active); color: var(--text); }
+
+  .status-log {
+    font-family: 'Courier New', monospace;
+    font-size: 10px; color: var(--text-dim);
+    padding: 6px 12px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    min-width: 220px;
+    transition: all .3s;
+  }
+  .status-log.active { color: var(--accent2); border-color: rgba(104,211,145,0.3); }
+  .status-log.notif  { color: var(--accent5); border-color: rgba(183,148,244,0.3); }
+
+  /* ── JVM WRAPPER (panels 1+2) ── */
+  .jvm-bracket {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: linear-gradient(to bottom, transparent, var(--accent) 20%, var(--accent) 80%, transparent);
+    border-radius: 2px;
+  }
+
+  /* ── PULSE RING on active MBean ── */
+  @keyframes pulse-ring {
+    0%   { box-shadow: 0 0 0 0 rgba(99,179,237,0.5); }
+    70%  { box-shadow: 0 0 0 8px rgba(99,179,237,0); }
+    100% { box-shadow: 0 0 0 0 rgba(99,179,237,0); }
+  }
+  .pulsing { animation: pulse-ring 1.5s infinite; }
+
+  /* ── GLOW FLASH on registry row ── */
+  @keyframes reg-flash {
+    0%   { background: rgba(104,211,145,0.25); }
+    100% { background: rgba(104,211,145,0.08); }
+  }
+  .reg-flashing { animation: reg-flash .6s ease-out forwards; }
+
+  /* ── NOTIFICATION PARTICLE ── */
+  .notif-particle {
+    position: fixed;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent5);
+    box-shadow: 0 0 12px var(--accent5);
+    pointer-events: none;
+    z-index: 60;
+    opacity: 0;
+    transition: none;
+  }
+
+  /* ── RESP. HIDE ── */
+  @media (max-width: 900px) {
+    .panels { grid-template-columns: 1fr; }
+    .panels::before, .panels::after { display: none; }
+    .panel { border-bottom: 1px solid var(--border); }
+  }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div>
+    <div class="header-title">JMX Architecture <span>// Interactive Canvas</span></div>
+    <div class="header-sub">javax.management — Java Management Extensions Specification</div>
+  </div>
+  <div class="header-pills">
+    <div class="pill active" onclick="selectPanel(0,this)">① Instrumentation</div>
+    <div class="pill" onclick="selectPanel(1,this)">② Agent</div>
+    <div class="pill" onclick="selectPanel(2,this)">③ Remote</div>
+    <div class="pill" onclick="selectPanel(-1,this)">All Panels</div>
+  </div>
+</header>
+
+<!-- LEGEND -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div>MBean / Instrumentation</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent2)"></div>MBean Server / Registry</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent3)"></div>Connectors / Adaptors</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent5)"></div>Notification Flow</div>
+  <div class="legend-line" style="background: linear-gradient(to right, var(--accent3), var(--accent2));"></div>
+  <div class="legend-item" style="font-size:10px; color:var(--text-dim)">Discovery path (click ▶ Run)</div>
+  <div class="legend-line" style="background: linear-gradient(to right, var(--accent5), var(--accent4));"></div>
+  <div class="legend-item" style="font-size:10px; color:var(--text-dim)">Notification push path</div>
+</div>
+
+<!-- CANVAS -->
+<div class="canvas-wrap">
+  <div class="panels" id="panels">
+
+    <!-- ═══════════════════════════════════════════════
+         PANEL 1 — INSTRUMENTATION LEVEL
+    ═══════════════════════════════════════════════ -->
+    <div class="panel" id="panel-0">
+      <div class="jvm-bracket" style="opacity:.4"></div>
+      <div class="panel-header">
+        <div class="panel-icon p1-icon">🧩</div>
+        <div>
+          <div class="panel-num">LAYER 01 // INSTRUMENTATION LEVEL</div>
+          <div class="panel-title">MBeans — Managed Resources</div>
+          <div class="panel-desc">Managed Beans expose JVM internals as attributes and operations. Each type implements a different contract.</div>
+        </div>
+      </div>
+
+      <!-- MBean Type Grid -->
+      <div class="glass-card">
+        <div class="card-label">MBean Types</div>
+        <div class="mbean-grid" id="mbean-grid">
+
+          <div class="mbean-card has-tooltip" id="mb-standard" onclick="selectMBean('standard')" style="border-color: rgba(99,179,237,0.3)">
+            <div class="tooltip">javax.management.StandardMBean</div>
+            <div class="mbean-icon">📦</div>
+            <div class="mbean-name" style="color:var(--accent)">Standard MBean</div>
+            <div class="mbean-iface">implements HelloMBean</div>
+            <div class="mbean-desc">Fixed interface. Introspected at startup via reflection. Lowest overhead.</div>
+          </div>
+
+          <div class="mbean-card has-tooltip" id="mb-dynamic" onclick="selectMBean('dynamic')" style="border-color: rgba(104,211,145,0.3)">
+            <div class="tooltip">javax.management.DynamicMBean</div>
+            <div class="mbean-icon">🔄</div>
+            <div class="mbean-name" style="color:var(--accent2)">Dynamic MBean</div>
+            <div class="mbean-iface">implements DynamicMBean</div>
+            <div class="mbean-desc">Self-describes at runtime via <code>getMBeanInfo()</code>. Flexible schema.</div>
+          </div>
+
+          <div class="mbean-card has-tooltip" id="mb-open" onclick="selectMBean('open')" style="border-color: rgba(246,173,85,0.3)">
+            <div class="tooltip">javax.management.openmbean.OpenMBean</div>
+            <div class="mbean-icon">🌐</div>
+            <div class="mbean-name" style="color:var(--accent3)">Open MBean</div>
+            <div class="mbean-iface">implements DynamicMBean</div>
+            <div class="mbean-desc">Uses only open types (CompositeData, TabularData) for interoperability.</div>
+          </div>
+
+          <div class="mbean-card has-tooltip" id="mb-model" onclick="selectMBean('model')" style="border-color: rgba(183,148,244,0.3)">
+            <div class="tooltip">javax.management.modelmbean.ModelMBean</div>
+            <div class="mbean-icon">🏗️</div>
+            <div class="mbean-name" style="color:var(--accent5)">Model MBean</div>
+            <div class="mbean-iface">implements ModelMBean</div>
+            <div class="mbean-desc">Fully configurable at runtime. Required by management frameworks (Spring JMX).</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Attribute / Operation Toggle -->
+      <div class="glass-card">
+        <div class="card-label">Attribute vs Operation Contract</div>
+        <div class="toggle-bar" style="margin-bottom:12px">
+          <button class="toggle-btn active" id="tab-attr" onclick="switchTab('attr')">🔩 Attribute (getter/setter)</button>
+          <button class="toggle-btn" id="tab-op" onclick="switchTab('op')">⚙️ Operation (invokable)</button>
+        </div>
+        <div class="attr-op-display" id="code-display">
+          <span class="code-comment">// Attribute: exposed as readable/writable property</span><br>
+          <span class="code-comment">// Maps to javax.management.MBeanAttributeInfo</span><br><br>
+          <span class="code-keyword">public interface</span> <span class="code-type">CacheManagerMBean</span> {<br>
+          &nbsp;&nbsp;<span class="code-comment">// readable + writable attribute</span><br>
+          &nbsp;&nbsp;<span class="code-type">int</span> <span class="code-method">getCacheSize</span>();<br>
+          &nbsp;&nbsp;<span class="code-keyword">void</span> <span class="code-method">setCacheSize</span>(<span class="code-type">int</span> size);<br>
+          &nbsp;&nbsp;<span class="code-comment">// read-only attribute (no setter)</span><br>
+          &nbsp;&nbsp;<span class="code-type">long</span> <span class="code-method">getHitRate</span>();<br>
+          }
+        </div>
+      </div>
+
+      <!-- MBean Lifecycle -->
+      <div class="glass-card has-tooltip">
+        <div class="tooltip">javax.management.MBeanInfo</div>
+        <div class="card-label">MBean Metadata Structure</div>
+        <div style="display:flex; flex-direction:column; gap:6px; font-family:'Courier New',monospace; font-size:10px; line-height:1.5;">
+          <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:rgba(99,179,237,0.07); border-radius:6px; border:1px solid rgba(99,179,237,0.15)">
+            <span style="color:var(--accent)">MBeanInfo</span><span style="color:var(--text-dim)">→</span><span style="color:var(--text-dim)">className, description</span>
+          </div>
+          <div style="margin-left:14px; display:flex; flex-direction:column; gap:4px;">
+            <div style="padding:5px 8px; background:rgba(0,0,0,0.2); border-radius:5px; border-left:2px solid var(--accent2)"><span style="color:var(--accent2)">MBeanAttributeInfo[]</span> <span style="color:var(--text-dim)">— attributes</span></div>
+            <div style="padding:5px 8px; background:rgba(0,0,0,0.2); border-radius:5px; border-left:2px solid var(--accent3)"><span style="color:var(--accent3)">MBeanOperationInfo[]</span> <span style="color:var(--text-dim)">— operations</span></div>
+            <div style="padding:5px 8px; background:rgba(0,0,0,0.2); border-radius:5px; border-left:2px solid var(--accent5)"><span style="color:var(--accent5)">MBeanNotificationInfo[]</span> <span style="color:var(--text-dim)">— events</span></div>
+            <div style="padding:5px 8px; background:rgba(0,0,0,0.2); border-radius:5px; border-left:2px solid var(--accent4)"><span style="color:var(--accent4)">MBeanConstructorInfo[]</span> <span style="color:var(--text-dim)">— constructors</span></div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /panel-0 -->
+
+
+    <!-- ═══════════════════════════════════════════════
+         PANEL 2 — AGENT LEVEL
+    ═══════════════════════════════════════════════ -->
+    <div class="panel" id="panel-1">
+      <div class="jvm-bracket"></div>
+      <div class="panel-header">
+        <div class="panel-icon p2-icon">🗄️</div>
+        <div>
+          <div class="panel-num">LAYER 02 // AGENT LEVEL</div>
+          <div class="panel-title">MBean Server — The Hub</div>
+          <div class="panel-desc">Central registry and broker for all MBeans. Mediates all read/write/invoke operations and routes notifications.</div>
+        </div>
+      </div>
+
+      <!-- MBean Server Core -->
+      <div class="mbs-core has-tooltip" id="mbs-core">
+        <div class="tooltip">javax.management.MBeanServer</div>
+        <div class="mbs-title">
+          <span>🗄️</span>
+          <span>MBean Server</span>
+          <span class="badge badge-green">CORE REGISTRY</span>
+        </div>
+        <div class="card-mono" style="margin-bottom:10px">
+          MBeanServerFactory.createMBeanServer("domain")<br>
+          ManagementFactory.getPlatformMBeanServer()
+        </div>
+
+        <!-- ObjectName registry table -->
+        <div style="font-size:9px; color:var(--text-dim); font-family:monospace; margin-bottom:6px; letter-spacing:1px; text-transform:uppercase;">ObjectName → MBean Registry</div>
+        <div class="mbs-registry" id="mbs-registry">
+          <div class="registry-row has-tooltip" id="reg-0" onclick="highlightReg(0)">
+            <div class="tooltip">java.lang:type=Memory → java.lang.management.MemoryMXBean</div>
+            <span class="reg-key">java.lang:type=Memory</span>
+            <span class="reg-arrow">→</span>
+            <span class="reg-val">MemoryMXBean</span>
+          </div>
+          <div class="registry-row has-tooltip" id="reg-1" onclick="highlightReg(1)">
+            <div class="tooltip">java.lang:type=Threading → java.lang.management.ThreadMXBean</div>
+            <span class="reg-key">java.lang:type=Threading</span>
+            <span class="reg-arrow">→</span>
+            <span class="reg-val">ThreadMXBean</span>
+          </div>
+          <div class="registry-row has-tooltip" id="reg-2" onclick="highlightReg(2)">
+            <div class="tooltip">com.app:type=Cache,name=L1 → CacheManagerMBean</div>
+            <span class="reg-key">com.app:type=Cache,name=L1</span>
+            <span class="reg-arrow">→</span>
+            <span class="reg-val">CacheManagerMBean</span>
+          </div>
+          <div class="registry-row has-tooltip" id="reg-3" onclick="highlightReg(3)">
+            <div class="tooltip">com.app:type=DataSource → DataSourceMBean</div>
+            <span class="reg-key">com.app:type=DataSource</span>
+            <span class="reg-arrow">→</span>
+            <span class="reg-val">DataSourceMBean</span>
+          </div>
+        </div>
+        <div style="font-size:9px; color:var(--text-dim); font-family:monospace; margin-top:6px;">
+          ↑ Click any row to highlight. MBeanServer stores refs, not instances.
+        </div>
+      </div>
+
+      <!-- Registration flow -->
+      <div class="glass-card has-tooltip">
+        <div class="tooltip">javax.management.ObjectName</div>
+        <div class="card-label">Registration Sequence</div>
+        <div style="font-family:'Courier New',monospace; font-size:10px; line-height:1.8; background:rgba(0,0,0,0.3); border-radius:8px; padding:12px;">
+          <span class="code-comment">// 1. Obtain the MBean Server</span><br>
+          <span class="code-type">MBeanServer</span> mbs =<br>
+          &nbsp;&nbsp;ManagementFactory.<span class="code-method">getPlatformMBeanServer</span>();<br><br>
+          <span class="code-comment">// 2. Instantiate the managed resource</span><br>
+          <span class="code-type">Object</span> cache = <span class="code-keyword">new</span> <span class="code-method">CacheManager</span>();<br><br>
+          <span class="code-comment">// 3. Define the ObjectName (domain:key=value)</span><br>
+          <span class="code-type">ObjectName</span> name = <span class="code-keyword">new</span> <span class="code-type">ObjectName</span>(<br>
+          &nbsp;&nbsp;<span class="code-string">"com.app:type=Cache,name=L1"</span>);<br><br>
+          <span class="code-comment">// 4. Register — triggers MBeanRegistration callbacks</span><br>
+          mbs.<span class="code-method">registerMBean</span>(cache, name);
+        </div>
+      </div>
+
+      <!-- Notification Bus -->
+      <div class="notif-bus" id="notif-bus">
+        <div class="tooltip">javax.management.NotificationBroadcaster</div>
+        <div class="bus-title">
+          <span>📡</span> Internal Notification Bus
+          <span class="badge badge-purple" style="margin-left:auto">NotificationBroadcaster</span>
+        </div>
+        <div style="font-size:10px; color:var(--text-dim); margin-bottom:10px; line-height:1.5;">
+          MBeans emit <code style="color:var(--accent5)">Notification</code> objects. The server routes them to all registered <code style="color:var(--accent5)">NotificationListener</code>s.
+        </div>
+        <div class="bus-track">
+          <div class="bus-packet" id="bus-pkt-1" style="background:rgba(183,148,244,0.2); color:var(--accent5); border:1px solid rgba(183,148,244,0.4)">
+            AttributeChangeNotification
+          </div>
+        </div>
+        <div class="bus-track">
+          <div class="bus-packet" id="bus-pkt-2" style="background:rgba(252,129,129,0.2); color:var(--accent4); border:1px solid rgba(252,129,129,0.4)">
+            JMXConnectionNotification
+          </div>
+        </div>
+        <div class="bus-label">↑ Notification packets (click "Push Notification" below to animate)</div>
+        <div style="margin-top:10px">
+          <button class="p2-flow-btn" onclick="fireNotification()">📡 Fire Notification</button>
+        </div>
+      </div>
+
+    </div><!-- /panel-1 -->
+
+
+    <!-- ═══════════════════════════════════════════════
+         PANEL 3 — REMOTE MANAGEMENT LEVEL
+    ═══════════════════════════════════════════════ -->
+    <div class="panel" id="panel-2">
+      <div class="panel-header">
+        <div class="panel-icon p3-icon">🌐</div>
+        <div>
+          <div class="panel-num">LAYER 03 // REMOTE MANAGEMENT LEVEL</div>
+          <div class="panel-title">Connectors & Protocol Adaptors</div>
+          <div class="panel-desc">Bridge between the internal JVM state and external management clients. Connectors speak JMX protocol; Adaptors translate to foreign protocols.</div>
+        </div>
+      </div>
+
+      <!-- Management Tools -->
+      <div class="glass-card">
+        <div class="card-label">External Management Tools</div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+
+          <div class="remote-tool has-tooltip" id="tool-jconsole" onclick="fireDiscovery('jconsole')">
+            <div class="tooltip">com.sun.tools.jconsole.JConsole — bundled in JDK</div>
+            <div class="rt-icon">🖥️</div>
+            <div>
+              <div class="rt-name">JConsole</div>
+              <div class="rt-class">com.sun.tools.jconsole.JConsole</div>
+            </div>
+            <div class="rt-badge"><span class="badge badge-blue">JDK Bundled</span></div>
+          </div>
+
+          <div class="remote-tool has-tooltip" id="tool-visualvm" onclick="fireDiscovery('visualvm')">
+            <div class="tooltip">org.graalvm.visualvm — standalone profiler + JMX client</div>
+            <div class="rt-icon">📊</div>
+            <div>
+              <div class="rt-name">VisualVM</div>
+              <div class="rt-class">org.graalvm.visualvm.core</div>
+            </div>
+            <div class="rt-badge"><span class="badge badge-green">Standalone</span></div>
+          </div>
+
+          <div class="remote-tool has-tooltip" id="tool-custom" onclick="fireDiscovery('custom')">
+            <div class="tooltip">javax.management.remote.JMXConnector — programmatic client</div>
+            <div class="rt-icon">⚙️</div>
+            <div>
+              <div class="rt-name">Custom JMX Client</div>
+              <div class="rt-class">javax.management.remote.JMXConnector</div>
+            </div>
+            <div class="rt-badge"><span class="badge badge-orange">API Client</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Connectors -->
+      <div class="glass-card">
+        <div class="card-label">JMX Connectors (Full Bidirectional)</div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+
+          <div class="connector-card has-tooltip" id="conn-rmi">
+            <div class="tooltip">javax.management.remote.rmi.RMIConnector — default JMX transport</div>
+            <div class="conn-header">
+              <div class="conn-icon">🔗</div>
+              <div>
+                <div class="conn-name" style="color:var(--accent3)">RMI Connector</div>
+                <div class="conn-class">javax.management.remote.rmi.RMIConnector</div>
+              </div>
+              <span class="badge badge-orange" style="margin-left:auto">DEFAULT</span>
+            </div>
+            <div style="font-size:10px; color:var(--text-dim); line-height:1.5;">
+              Default transport. Uses Java RMI over IIOP or JRMP. Supports authentication, SSL, and notification forwarding.
+            </div>
+            <div style="margin-top:8px; font-family:'Courier New',monospace; font-size:9px; color:var(--text-dim); background:rgba(0,0,0,0.3); border-radius:5px; padding:6px 8px;">
+              service:jmx:rmi:///jndi/rmi://host:9999/jmxrmi
+            </div>
+          </div>
+
+          <div class="connector-card has-tooltip" id="conn-jmxmp">
+            <div class="tooltip">javax.management.remote.generic.GenericConnector — lightweight alternative</div>
+            <div class="conn-header">
+              <div class="conn-icon">🔌</div>
+              <div>
+                <div class="conn-name" style="color:var(--accent2)">JMXMP Connector</div>
+                <div class="conn-class">javax.management.remote.generic.GenericConnector</div>
+              </div>
+              <span class="badge badge-green" style="margin-left:auto">OPT-IN</span>
+            </div>
+            <div style="font-size:10px; color:var(--text-dim); line-height:1.5;">
+              JMX Messaging Protocol. Firewall-friendly, single port. Requires optional reference implementation.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Protocol Adaptors -->
+      <div class="glass-card">
+        <div class="card-label">Protocol Adaptors (One-Way Translation)</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+
+          <div style="flex:1; min-width:100px; padding:10px; background:rgba(252,129,129,0.07); border:1px solid rgba(252,129,129,0.2); border-radius:8px;" class="has-tooltip">
+            <div class="tooltip">com.sun.jdmk.comm.HtmlAdaptorServer</div>
+            <div style="font-size:16px; margin-bottom:4px;">🌐</div>
+            <div style="font-size:11px; font-weight:700; color:var(--accent4)">HTTP Adaptor</div>
+            <div style="font-family:'Courier New',monospace; font-size:9px; color:var(--text-dim); margin-top:2px;">HtmlAdaptorServer</div>
+            <div style="font-size:10px; color:var(--text-dim); margin-top:6px; line-height:1.4;">Read-only browser interface. No notification support.</div>
+          </div>
+
+          <div style="flex:1; min-width:100px; padding:10px; background:rgba(246,173,85,0.07); border:1px solid rgba(246,173,85,0.2); border-radius:8px;" class="has-tooltip">
+            <div class="tooltip">com.sun.jdmk.comm.SnmpAdaptorServer</div>
+            <div style="font-size:16px; margin-bottom:4px;">📡</div>
+            <div style="font-size:11px; font-weight:700; color:var(--accent3)">SNMP Adaptor</div>
+            <div style="font-family:'Courier New',monospace; font-size:9px; color:var(--text-dim); margin-top:2px;">SnmpAdaptorServer</div>
+            <div style="font-size:10px; color:var(--text-dim); margin-top:6px; line-height:1.4;">Translates SNMP GET/SET to JMX attributes.</div>
+          </div>
+        </div>
+        <div style="margin-top:8px; font-size:10px; color:var(--text-dim); padding:6px 8px; background:rgba(0,0,0,0.2); border-radius:6px; border:1px solid var(--border);">
+          ⚠️ Adaptors are protocol translators only — they do not provide the full JMX remote API semantics that Connectors offer.
+        </div>
+      </div>
+
+    </div><!-- /panel-2 -->
+
+  </div><!-- /panels -->
+</div><!-- /canvas-wrap -->
+
+<!-- ACTION STRIP -->
+<div class="action-strip">
+  <span class="action-label">▶ Animations:</span>
+  <button class="action-btn action-btn-discovery" onclick="runDiscoveryFlow()">🔍 Discovery Flow (Remote → MBean)</button>
+  <button class="action-btn action-btn-notif" onclick="runNotificationLoop()">📡 Push Notification Loop (MBean → Client)</button>
+  <div class="status-log" id="status-log">// Ready. Click an animation or interact with components above.</div>
+  <button class="action-btn action-btn-reset" onclick="resetAll()">↺ Reset</button>
+</div>
+
+<!-- SVG OVERLAY for flow animations -->
+<svg id="flow-svg"></svg>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════════════ */
+let currentTab = 'attr';
+let animating  = false;
+
+/* ═══════════════════════════════════════════════════════════
+   PANEL FOCUS
+═══════════════════════════════════════════════════════════ */
+function selectPanel(idx, el) {
+  document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  const panels = document.querySelectorAll('.panel');
+  panels.forEach((p, i) => {
+    if (idx === -1) {
+      p.style.opacity = '1';
+      p.style.filter  = '';
+    } else {
+      p.style.opacity = (i === idx) ? '1' : '0.35';
+      p.style.filter  = (i === idx) ? '' : 'grayscale(0.5)';
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MBEAN SELECTION
+═══════════════════════════════════════════════════════════ */
+const mbeanData = {
+  standard: {
+    sel: 'sel-standard',
+    title: 'Standard MBean',
+    iface: 'implements HelloMBean',
+    desc: 'Fixed compile-time interface. MBeanServer introspects it via reflection on startup. Zero runtime overhead. Most widely used.'
+  },
+  dynamic: {
+    sel: 'sel-dynamic',
+    title: 'Dynamic MBean',
+    iface: 'implements DynamicMBean',
+    desc: 'Describes itself at runtime via getMBeanInfo(). Useful when the set of attributes is unknown at compile time.'
+  },
+  open: {
+    sel: 'sel-open',
+    title: 'Open MBean',
+    iface: 'implements DynamicMBean',
+    desc: 'Restricts types to "open types" (SimpleType, CompositeType, TabularType) ensuring cross-platform interoperability.'
+  },
+  model: {
+    sel: 'sel-model',
+    title: 'Model MBean',
+    iface: 'implements ModelMBean',
+    desc: 'Fully runtime-configurable via ModelMBeanInfo. Used internally by Spring JMX, JBoss, Hibernate metrics.'
+  }
+};
+
+function selectMBean(type) {
+  document.querySelectorAll('.mbean-card').forEach(c => {
+    c.classList.remove('selected','sel-standard','sel-dynamic','sel-open','sel-model','pulsing');
+  });
+  const card = document.getElementById('mb-' + type);
+  const d    = mbeanData[type];
+  card.classList.add('selected', d.sel, 'pulsing');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ATTRIBUTE / OPERATION TOGGLE
+═══════════════════════════════════════════════════════════ */
+const codeAttr = `<span class="code-comment">// Attribute: exposed as readable/writable property</span><br>
+<span class="code-comment">// Maps to javax.management.MBeanAttributeInfo</span><br><br>
+<span class="code-keyword">public interface</span> <span class="code-type">CacheManagerMBean</span> {<br>
+&nbsp;&nbsp;<span class="code-comment">// readable + writable attribute</span><br>
+&nbsp;&nbsp;<span class="code-type">int</span> <span class="code-method">getCacheSize</span>();<br>
+&nbsp;&nbsp;<span class="code-keyword">void</span> <span class="code-method">setCacheSize</span>(<span class="code-type">int</span> size);<br>
+&nbsp;&nbsp;<span class="code-comment">// read-only attribute (no setter)</span><br>
+&nbsp;&nbsp;<span class="code-type">long</span> <span class="code-method">getHitRate</span>();<br>
+}`;
+
+const codeOp = `<span class="code-comment">// Operation: invokable method via MBeanServer.invoke()</span><br>
+<span class="code-comment">// Maps to javax.management.MBeanOperationInfo</span><br><br>
+<span class="code-keyword">public interface</span> <span class="code-type">CacheManagerMBean</span> {<br>
+&nbsp;&nbsp;<span class="code-comment">// Operation — IMPACT_ACTION (writes state)</span><br>
+&nbsp;&nbsp;<span class="code-keyword">void</span> <span class="code-method">flushCache</span>();<br>
+&nbsp;&nbsp;<span class="code-comment">// Operation — IMPACT_INFO (read-only query)</span><br>
+&nbsp;&nbsp;<span class="code-type">String[]</span> <span class="code-method">listEntries</span>(<span class="code-type">int</span> maxCount);<br>
+}<br><br>
+<span class="code-comment">// Client-side invocation:</span><br>
+mbs.<span class="code-method">invoke</span>(name, <span class="code-string">"flushCache"</span>, <span class="code-keyword">null</span>, <span class="code-keyword">null</span>);`;
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tab-attr').classList.toggle('active', tab === 'attr');
+  document.getElementById('tab-op').classList.toggle('active', tab === 'op');
+  const display = document.getElementById('code-display');
+  display.style.opacity = '0';
+  setTimeout(() => {
+    display.innerHTML = tab === 'attr' ? codeAttr : codeOp;
+    display.style.opacity = '1';
+    display.style.transition = 'opacity .3s';
+  }, 150);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   REGISTRY ROW HIGHLIGHT
+═══════════════════════════════════════════════════════════ */
+function highlightReg(idx) {
+  document.querySelectorAll('.registry-row').forEach((r,i) => {
+    r.classList.remove('active','reg-flashing');
+    if (i === idx) {
+      r.classList.add('active','reg-flashing');
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   NOTIFICATION BUS ANIMATION
+═══════════════════════════════════════════════════════════ */
+function fireNotification() {
+  ['bus-pkt-1','bus-pkt-2'].forEach((id, i) => {
+    const el = document.getElementById(id);
+    el.classList.remove('animating');
+    void el.offsetWidth; // reflow
+    setTimeout(() => el.classList.add('animating'), i * 400);
+  });
+  setStatus('📡 Notification fired: AttributeChangeNotification → all listeners', 'notif');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HELPER: get element center (viewport coords)
+═══════════════════════════════════════════════════════════ */
+function center(el) {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width/2, y: r.top + r.height/2 };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HELPER: animated dot along SVG path
+═══════════════════════════════════════════════════════════ */
+function animateDot(svg, pathEl, color, duration, delay, onEnd) {
+  const dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
+  dot.setAttribute('r','6');
+  dot.setAttribute('fill', color);
+  dot.style.filter = `drop-shadow(0 0 6px ${color})`;
+  svg.appendChild(dot);
+
+  const len    = pathEl.getTotalLength();
+  const start  = performance.now() + delay;
+  let   raf;
+
+  function tick(now) {
+    if (now < start) { raf = requestAnimationFrame(tick); return; }
+    const t = Math.min((now - start) / duration, 1);
+    const eased = t < .5 ? 2*t*t : -1+(4-2*t)*t;
+    const pt = pathEl.getPointAtLength(eased * len);
+    dot.setAttribute('cx', pt.x);
+    dot.setAttribute('cy', pt.y);
+    dot.setAttribute('opacity', t < 0.1 ? t/0.1 : t > 0.85 ? (1-t)/0.15 : 1);
+    if (t < 1) { raf = requestAnimationFrame(tick); }
+    else { svg.removeChild(dot); if (onEnd) onEnd(); }
+  }
+  raf = requestAnimationFrame(tick);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HELPER: draw SVG path between points
+═══════════════════════════════════════════════════════════ */
+function makePath(svg, pts, color) {
+  const d = pts.map((p,i) => (i===0?`M ${p.x} ${p.y}`:`C ${p.cx??p.x} ${p.cy??p.y} ${p.cx2??p.x} ${p.cy2??p.y} ${p.x} ${p.y}`)).join(' ');
+  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d', buildSmoothPath(pts));
+  path.setAttribute('stroke', color);
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke-width', '2');
+  path.setAttribute('stroke-dasharray', '6 4');
+  path.setAttribute('opacity', '0.6');
+  svg.appendChild(path);
+  return path;
+}
+
+function buildSmoothPath(pts) {
+  if (pts.length === 2) {
+    const [a,b] = pts;
+    const mx = (a.x + b.x) / 2;
+    return `M ${a.x} ${a.y} C ${mx} ${a.y} ${mx} ${b.y} ${b.x} ${b.y}`;
+  }
+  let d = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i=1; i<pts.length; i++) {
+    const prev = pts[i-1], cur = pts[i];
+    const mx = (prev.x + cur.x) / 2;
+    d += ` C ${mx} ${prev.y} ${mx} ${cur.y} ${cur.x} ${cur.y}`;
+  }
+  return d;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DISCOVERY FLOW
+═══════════════════════════════════════════════════════════ */
+function fireDiscovery(tool) {
+  document.querySelectorAll('.remote-tool').forEach(t => t.classList.remove('firing'));
+  document.getElementById('tool-' + tool).classList.add('firing');
+}
+
+async function runDiscoveryFlow() {
+  if (animating) return;
+  animating = true;
+  resetAllVisuals();
+
+  const svg = document.getElementById('flow-svg');
+  svg.innerHTML = '';
+
+  setStatus('🔍 Step 1/4 — Remote tool initiates JMX request...', 'active');
+
+  // Elements to animate through
+  const toolEl  = document.getElementById('tool-jconsole');
+  const connEl  = document.getElementById('conn-rmi');
+  const mbsEl   = document.getElementById('mbs-core');
+  const reg2El  = document.getElementById('reg-2'); // CacheManagerMBean
+  const mbEl    = document.getElementById('mb-standard');
+
+  toolEl.classList.add('firing');
+  connEl.classList.add('active-conn');
+
+  await delay(400);
+
+  const pt = center(toolEl);
+  const pc = center(connEl);
+  const pm = center(mbsEl);
+  const pr = center(reg2El);
+  const pb = center(mbEl);
+
+  // Draw path segments
+  const color = '#f6ad55';
+  const path1 = makePath(svg, [pt, pc], color);
+  const path2 = makePath(svg, [pc, pm], color);
+  const path3 = makePath(svg, [pm, pr], color);
+  const path4 = makePath(svg, [pr, pb], '#63b3ed');
+
+  setStatus('🔍 Step 2/4 — Request traversing RMI Connector...', 'active');
+  animateDot(svg, path1, color, 700, 0, async () => {
+    setStatus('🔍 Step 3/4 — MBean Server looking up ObjectName...', 'active');
+    highlightReg(2);
+    animateDot(svg, path2, color, 700, 0, async () => {
+      animateDot(svg, path3, color, 500, 0, async () => {
+        setStatus('🔍 Step 4/4 — getAttribute() called on CacheManagerMBean!', 'active');
+        selectMBean('standard');
+        animateDot(svg, path4, '#63b3ed', 600, 0, async () => {
+          await delay(1200);
+          setStatus('✅ Discovery complete. MBean returned attribute value to JConsole.', 'active');
+          animating = false;
+        });
+      });
+    });
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   NOTIFICATION LOOP
+═══════════════════════════════════════════════════════════ */
+async function runNotificationLoop() {
+  if (animating) return;
+  animating = true;
+  resetAllVisuals();
+
+  const svg = document.getElementById('flow-svg');
+  svg.innerHTML = '';
+
+  setStatus('📡 Step 1/4 — MBean state changes, fires notification...', 'notif');
+
+  const mbEl   = document.getElementById('mb-standard');
+  const busEl  = document.getElementById('notif-bus');
+  const mbsEl  = document.getElementById('mbs-core');
+  const toolEl = document.getElementById('tool-jconsole');
+
+  selectMBean('standard');
+  toolEl.classList.add('firing');
+  await delay(300);
+
+  const pb  = center(mbEl);
+  const pbs = center(busEl);
+  const pm  = center(mbsEl);
+  const pt  = center(toolEl);
+
+  const color = '#b794f4';
+  const path1 = makePath(svg, [pb, pbs], color);
+  const path2 = makePath(svg, [pbs, pm], color);
+  const path3 = makePath(svg, [pm, pt], '#f6ad55');
+
+  setStatus('📡 Step 2/4 — AttributeChangeNotification on Internal Bus...', 'notif');
+  animateDot(svg, path1, color, 700, 0, () => {
+    fireNotification();
+    setStatus('📡 Step 3/4 — MBean Server dispatching to all listeners...', 'notif');
+    animateDot(svg, path2, color, 700, 300, () => {
+      setStatus('📡 Step 4/4 — Notification delivered to JConsole listener!', 'notif');
+      animateDot(svg, path3, '#f6ad55', 700, 0, async () => {
+        await delay(1200);
+        setStatus('✅ Notification loop complete. Client listener invoked.', 'notif');
+        animating = false;
+      });
+    });
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   STATUS LOG
+═══════════════════════════════════════════════════════════ */
+function setStatus(msg, cls) {
+  const el = document.getElementById('status-log');
+  el.className = 'status-log' + (cls ? ' ' + cls : '');
+  el.textContent = msg;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RESET
+═══════════════════════════════════════════════════════════ */
+function resetAllVisuals() {
+  document.querySelectorAll('.remote-tool').forEach(t => t.classList.remove('firing'));
+  document.querySelectorAll('.connector-card').forEach(c => c.classList.remove('active-conn'));
+  document.querySelectorAll('.mbean-card').forEach(c => {
+    c.classList.remove('selected','sel-standard','sel-dynamic','sel-open','sel-model','pulsing');
+  });
+  document.querySelectorAll('.registry-row').forEach(r => r.classList.remove('active','reg-flashing'));
+  document.getElementById('flow-svg').innerHTML = '';
+}
+
+function resetAll() {
+  animating = false;
+  resetAllVisuals();
+  setStatus('// Ready. Click an animation or interact with components above.', '');
+  document.querySelectorAll('.panel').forEach(p => { p.style.opacity='1'; p.style.filter=''; });
+  document.querySelectorAll('.pill').forEach((p,i) => p.classList.toggle('active', i===3));
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/* ═══════════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════════ */
+selectPanel(-1, document.querySelectorAll('.pill')[3]);
+</script>
+</body>
+</html>
